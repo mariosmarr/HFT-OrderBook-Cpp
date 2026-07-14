@@ -1,41 +1,30 @@
-
-//
-// Created by mario on 6/30/2026.
-//
-
 #ifndef UNTITLED6_ORDER_H
 #define UNTITLED6_ORDER_H
-#include <iostream>
 
+#include <iostream>
 
 class Order {
 protected:
+    int Attribute; // Represents quantity/shares of the order
     int id;
-    static int orderCounter;
+    static int orderCounter; // Shared across all instances for auto-increment IDs
     double price;
+
 public:
-    int GetId()const
-    {
-        return id;
-    }
-    void SetPrice(double newprice) {
-        price = newprice;
+    // Constructor & Destructor
+    Order(double pricee, int Attri);
+    virtual ~Order();
 
-    }
-    double GetPrice() const { return price; }
-    Order(double pricee) :  price(pricee) {
-        id=++orderCounter;
-    }
+    // Getters & Setters (Encapsulation)
+    int GetId() const;
+    double GetPrice() const;
+    void SetPrice(double newprice);
+    int GetAttribute() const;
+    void SetQuantity(int newQuantity);
 
-    virtual void Print() const {
-        std::cout << "GENERIC ORDER" << std::endl;
-    }
-
-    virtual ~Order() {
-        std::cout << "Order " << id << " destroyed" << std::endl;
-    }
+    // Polymorphic Methods
+    virtual void Print() const;
+    virtual bool isBuy() = 0; // Pure Virtual - enforces Buy/Sell distinction
 };
 
-
-
-#endif
+#endif // UNTITLED6_ORDER_H

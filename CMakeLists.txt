@@ -9,4 +9,5 @@ add_executable(untitled6 main.cpp
         BuyOrder.h
         SellOrder.h
         Order.cpp
-        OrderBook.h)
+        OrderBook.h
+        OrderBook.cpp)

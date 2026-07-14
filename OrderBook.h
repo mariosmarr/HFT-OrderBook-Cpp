@@ -1,42 +1,33 @@
-#ifndef ORDERBOOK_H
-#define ORDERBOOK_H
+#ifndef UNTITLED6_ORDERBOOK_H
+#define UNTITLED6_ORDERBOOK_H
 
 #include <unordered_map>
+#include <vector>
 #include <memory>
 #include <iostream>
+#include <algorithm>
 #include "Order.h"
-
-
-
-
-
 
 class OrderBook {
 private:
+    // Holds full ownership of all active orders for O(1) lifecycle management
     std::unordered_map<int, std::unique_ptr<Order>> orderMap;
-std::unordered_map<double, std::vector<std::unique_ptr<Order>>> PriceMap;
-public:
-    OrderBook() {
-        orderMap.reserve(100);
-    }
 
-    void AddOrder(std::unique_ptr<Order> newOrder) {
-        int id = newOrder->GetId();
-        orderMap[id] = std::move(newOrder);
-        std::cout << "[OrderBook] Automatically added Order ID: " << id << std::endl;
-    }
-    void CancelOrder(int id) {
-        auto it=orderMap.find(id);
-        if (it!=orderMap.end()) {
-            orderMap.erase(it);
-        }else {
-            std::cout << "[OrderBook] Order ID not found" << std::endl;
-        }
-    }
-    void AddOrderToLevel(std::unique_ptr<Order> newOrder) {
-        double levelPrice=newOrder->GetPrice();
-        PriceMap[levelPrice].push_back(std::move(newOrder));
-    }
+    // Maps price levels to raw pointers of orders for fast matching and execution
+    std::unordered_map<double, std::vector<Order*>> PriceMap;
+
+    // Helper method to validate incoming order specifications before processing
+    bool ValidateOrder(const std::unique_ptr<Order>& order) const;
+
+public:
+    OrderBook();
+
+    // Core Exchange Operations
+    void CancelOrder(int id);
+    void InsertOrder(std::unique_ptr<Order> newOrder);
+    int GetVolumeAtLevel(double price);
+    void MatchOrder(std::unique_ptr<Order> newOrder);
+    void PrintOrderBook() const;
 };
 
-#endif
+#endif // UNTITLED6_ORDERBOOK_H
