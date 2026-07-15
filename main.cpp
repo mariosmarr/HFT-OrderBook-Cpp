@@ -5,6 +5,7 @@
 #include "BuyOrder.h"
 #include "SellOrder.h"
 #include "OrderBook.h"
+#include <chrono>
 
 // Demonstrates polymorphic order dispatching (useful for outbound routing)
 void ProcessOrder(const Order& currentOrder) {
@@ -58,22 +59,16 @@ int main() {
     book.CancelOrder(999);
 
     book.PrintOrderBook(); // $150 level should now contain only 10 shares
-
-    // -----------------------------------------------------------------
-    // TEST 4: Aggressive Order Entry & Partial Fills
-    // -----------------------------------------------------------------
-    std::cout << "\n[TEST 4] Sweeping Liquidity with Aggressive Buy Order..." << std::endl;
-
-    auto bigBuyer = std::make_unique<BuyOrder>(150.0, 12); // ID 4
-
-    // Sweeps 10 shares from ID 1, leaves 2 shares resting on the BID side @ $150.0
+    std::cout << "\n[TEST 4] Sweeping Liquidity & Measuring Latency..." << std::endl;
+    auto bigBuyer = std::make_unique<BuyOrder>(150.0, 12);
+    auto start = std::chrono::high_resolution_clock::now();
     book.MatchOrder(std::move(bigBuyer));
-
+    auto end = std::chrono::high_resolution_clock::now();
+    auto timeDiff = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+    long long duration = timeDiff.count();
+    std::cout << "\n⏱️ [LATENCY REPORT] Matching Engine Execution Time: " << duration << " nanoseconds!" << std::endl;
     book.PrintOrderBook();
 
-    // -----------------------------------------------------------------
-    // TEST 5: Multi-Level Sweep Test
-    // -----------------------------------------------------------------
     std::cout << "\n[TEST 5] Multi-Level Price Sweep..." << std::endl;
 
     // Add sellers at multiple price levels
