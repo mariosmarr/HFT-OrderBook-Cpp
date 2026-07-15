@@ -1,0 +1,9 @@
+# IDE settings (CLion)
+.idea/
+cmake-build-debug/
+cmake-build-release/
+
+# Temporary scratch files
+kmkmm.cpp
+kmkmm.h
+poystis.cpp
