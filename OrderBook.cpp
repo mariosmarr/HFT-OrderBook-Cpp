@@ -106,7 +106,7 @@ void OrderBook::MatchOrder(std::unique_ptr<Order> newOrder) {
                         int updatedExistingQty = existingOrder->GetAttribute() - tradeAmount;
                         existingOrder->SetQuantity(updatedExistingQty);
 
-                        std::cout << "[TRADE EXECUTED] " << tradeAmount << " shares matched at $"
+                       std::cout << "[TRADE EXECUTED] " << tradeAmount << " shares matched at $"
                                   << currentPrice << " (Buyer ID: " << newOrder->GetId() << ")" << std::endl;
 
                         // Fully executed order cleanup
@@ -226,4 +226,135 @@ bool OrderBook::ValidateOrder(const std::unique_ptr<Order>& order) const {
         return false;
     }
     return true;
+}
+void OrderBook::ExecuteMarketOrder(bool isBuySide) {
+
+    // Sanity check: can't trade if the book has zero orders
+    if (PriceMap.empty()) {
+        std::cout << "\n⚠️ [MARKET ORDER] Failed! The Order Book is empty." << std::endl;
+        return;
+    }
+
+    double bestPrice = -1.0;
+    bool found = false;
+
+    // =========================================================================
+    // CASE A: MARKET BUY
+    // We want to buy at the cheapest available sell price (Best Ask)
+    // =========================================================================
+    if (isBuySide) {
+
+        // Scan the unordered map to find the lowest price level with active sellers
+        for (const auto& pair : PriceMap) {
+            double price = pair.first;
+            const auto& orderList = pair.second;
+
+            if (!orderList.empty()) {
+                bool hasAsks = false;
+
+                // Ensure this price level actually has Sell orders (asks)
+                for (auto* o  : orderList) {
+                    if (o && !o->isBuy()) {
+                        hasAsks = true;
+                        break; // Found a seller, skip the rest of this list for speed
+                    }
+                }
+
+                // Keep track of the lowest valid sell price we've seen so far
+                if (hasAsks) {
+                    if (!found || price < bestPrice) {
+                        bestPrice = price;
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        // If a valid price level was found, match the first order (FIFO)
+        if (found) {
+            std::cout << "\n⚡ [MARKET BUY] Executed immediately at best price: $" << bestPrice << std::endl;
+
+            auto& orderList = PriceMap[bestPrice];
+
+            for (auto it = orderList.begin(); it != orderList.end(); ++it) {
+                Order* orderToMatch = *it;
+
+                if (orderToMatch && !orderToMatch->isBuy()) {
+                    int matchedId = orderToMatch->GetId();
+
+                    // Erase raw pointer first to avoid dangling pointer issues
+                    orderList.erase(it);
+
+                    // Erase from registry to safely deallocate unique_ptr memory (RAII)
+                    orderMap.erase(matchedId);
+                    break;
+                }
+            }
+
+            // Cleanup empty price levels to keep memory footprint low
+            if (orderList.empty()) {
+                PriceMap.erase(bestPrice);
+            }
+        } else {
+            std::cout << "\n⚠️ [MARKET BUY] Failed! No sell orders (asks) available in the book." << std::endl;
+        }
+    }
+    // =========================================================================
+    // CASE B: MARKET SELL
+    // We want to sell at the highest available buy price (Best Bid)
+    // =========================================================================
+    else {
+        // Scan the unordered map to find the highest price level with active buyers
+        for (const auto& pair : PriceMap) {
+            double price = pair.first;
+            const auto& orderList = pair.second;
+
+            if (!orderList.empty()) {
+                bool hasBids = false;
+
+                // Ensure this price level actually has Buy orders (bids)
+                for ( auto* o : orderList) {
+                    if (o && o->isBuy()) {
+                        hasBids = true;
+                        break;
+                    }
+                }
+
+                // Keep track of the highest valid buy price we've seen so far
+                if (hasBids) {
+                    if (!found || price > bestPrice) {
+                        bestPrice = price;
+                        found = true;
+                    }
+                }
+            }
+        }
+
+        // If a valid price level was found, match the first order (FIFO)
+        if (found) {
+            std::cout << "\n⚡ [MARKET SELL] Executed immediately at best price: $" << bestPrice << std::endl;
+
+            auto& orderList = PriceMap[bestPrice];
+
+            for (auto it = orderList.begin(); it != orderList.end(); ++it) {
+                Order* orderToMatch = *it;
+
+                if (orderToMatch && orderToMatch->isBuy()) {
+                    int matchedId = orderToMatch->GetId();
+
+                    // Safety cleanup of raw pointers and unique_ptr memory
+                    orderList.erase(it);
+                    orderMap.erase(matchedId);
+                    break;
+                }
+            }
+
+            // Cleanup empty price level
+            if (orderList.empty()) {
+                PriceMap.erase(bestPrice);
+            }
+        } else {
+            std::cout << "\n⚠️ [MARKET SELL] Failed! No buy orders (bids) available in the book." << std::endl;
+        }
+    }
 }

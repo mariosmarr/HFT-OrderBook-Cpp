@@ -28,6 +28,7 @@ public:
     int GetVolumeAtLevel(double price);
     void MatchOrder(std::unique_ptr<Order> newOrder);
     void PrintOrderBook() const;
+    void ExecuteMarketOrder(bool isBuySide);
 };
 
 #endif // UNTITLED6_ORDERBOOK_H

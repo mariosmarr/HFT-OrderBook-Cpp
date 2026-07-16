@@ -88,9 +88,31 @@ int main() {
     std::cout << "\n--- Final Book State after all tests ---" << std::endl;
     book.PrintOrderBook();
 
-    std::cout << "==================================================" << std::endl;
-    std::cout << "           ALL TESTS COMPLETED SUCCESSFULLY       " << std::endl;
-    std::cout << "==================================================" << std::endl;
+    // -----------------------------------------------------------------
+    // TEST 6: Immediate Market Order Execution (Best Bid/Ask Matching)
+    // -----------------------------------------------------------------
+    std::cout << "\n[TEST 6] Testing Aggressive Market Orders..." << std::endl;
+
+    // Add resting limit orders to create a clear spread
+    std::cout << "Populating some resting orders to test market matching..." << std::endl;
+    auto restingBid = std::make_unique<BuyOrder>(90.0, 10);   // Buyer waiting at $90
+    auto restingAsk = std::make_unique<SellOrder>(120.0, 15); // Seller waiting at $120
+    book.MatchOrder(std::move(restingBid));
+    book.MatchOrder(std::move(restingAsk));
+
+    std::cout << "--- Book state before market orders hit ---" << std::endl;
+    book.PrintOrderBook();
+
+    // Fire an aggressive Market Buy (Should immediately match the best Ask at $120)
+    std::cout << "Firing Market Buy..." << std::endl;
+    book.ExecuteMarketOrder(true);
+
+    // Fire an aggressive Market Sell (Should immediately match the best Bid at $90)
+    std::cout << "Firing Market Sell..." << std::endl;
+    book.ExecuteMarketOrder(false);
+
+    std::cout << "\n--- Final Book State after all tests ---" << std::endl;
+    book.PrintOrderBook();
 
     return 0;
 }
