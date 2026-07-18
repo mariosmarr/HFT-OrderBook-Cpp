@@ -53,7 +53,7 @@ int main() {
     std::cout << "\n[TEST 3] Testing Cancellations..." << std::endl;
 
     // Cancel existing order (ID 2)
-    book.CancelOrder(2);
+    book.CancelOrder(3);
 
     // Attempt to cancel non-existing order (ID 999) - Should fail gracefully
     book.CancelOrder(999);
@@ -88,8 +88,8 @@ int main() {
     std::cout << "\n--- Final Book State after all tests ---" << std::endl;
     book.PrintOrderBook();
 
-    // -----------------------------------------------------------------
-    // TEST 6: Immediate Market Order Execution (Best Bid/Ask Matching)
+   // -----------------------------------------------------------------
+    // TEST 6: Immediate Market Order Execution
     // -----------------------------------------------------------------
     std::cout << "\n[TEST 6] Testing Aggressive Market Orders..." << std::endl;
 
@@ -103,16 +103,41 @@ int main() {
     std::cout << "--- Book state before market orders hit ---" << std::endl;
     book.PrintOrderBook();
 
-    // Fire an aggressive Market Buy (Should immediately match the best Ask at $120)
-    std::cout << "Firing Market Buy..." << std::endl;
-    book.ExecuteMarketOrder(true);
+    // FIX: Updated to match the new V2 signature (Direction, Quantity)
+    std::cout << "Firing Market Buy for 15 shares..." << std::endl;
+    book.ExecuteMarketOrder(true, 15);
 
-    // Fire an aggressive Market Sell (Should immediately match the best Bid at $90)
-    std::cout << "Firing Market Sell..." << std::endl;
-    book.ExecuteMarketOrder(false);
+    std::cout << "Firing Market Sell for 10 shares..." << std::endl;
+    book.ExecuteMarketOrder(false, 10);
 
-    std::cout << "\n--- Final Book State after all tests ---" << std::endl;
+    std::cout << "--- Book state after TEST 6 ---" << std::endl;
+    book.PrintOrderBook();
+
+    // -----------------------------------------------------------------
+    // TEST 7: Industrial-Grade V2 Market Order Sweep & Partial Fills
+    // -----------------------------------------------------------------
+    std::cout << "\n[TEST 7] Testing V2 Market Order Deep Sweep & Partial Fills..." << std::endl;
+
+    // Injecting deep Ask liquidity (Sellers) across 3 distinct price levels
+    std::cout << "Populating deep Ask liquidity..." << std::endl;
+    book.MatchOrder(std::make_unique<SellOrder>(200.0, 10)); // Seller A: 10 shares @ $200
+    book.MatchOrder(std::make_unique<SellOrder>(201.0, 15)); // Seller B: 15 shares @ $201
+    book.MatchOrder(std::make_unique<SellOrder>(202.0, 20)); // Seller C: 20 shares @ $202
+
+    std::cout << "--- Book state before deep market sweep ---" << std::endl;
+    book.PrintOrderBook();
+
+    // Fire a massive Market Buy of 35 shares.
+    // EXPECTED BEHAVIOR:
+    // - Consumes 10 shares @ $200 (Level fully cleared)
+    // - Consumes 15 shares @ $201 (Level fully cleared)
+    // - Consumes 10 shares @ $202 (Partial fill, leaving 10 shares resting at $202)
+    std::cout << "Firing heavy Market Buy for 35 shares..." << std::endl;
+    book.ExecuteMarketOrder(true, 35);
+
+    std::cout << "\n--- Final Book State after V2 Deep Sweep ---" << std::endl;
     book.PrintOrderBook();
 
     return 0;
+
 }
