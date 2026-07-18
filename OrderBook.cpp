@@ -334,6 +334,6 @@ void OrderBook::ExecuteMarketOrder(bool isBuySide, int requestedQty) {
         std::cout << "⚠️ [MARKET ORDER PARTIAL] Liquidity deficit! "
                   << requestedQty << " shares left unfulfilled." << std::endl;
     } else {
-        std::cout << "✅ [MARKET ORDER FULLY FILLED] Execution completed successfully." << std::endl;
+        std::cout << " [MARKET ORDER FULLY FILLED] Execution completed successfully." << std::endl;
     }
 }
