@@ -108,6 +108,13 @@ void OrderBook::MatchOrder(std::unique_ptr<Order> newOrder) {
 
                        std::cout << "[TRADE EXECUTED] " << tradeAmount << " shares matched at $"
                                   << currentPrice << " (Buyer ID: " << newOrder->GetId() << ")" << std::endl;
+                        // Record execution in ledger
+                        tradeLedger.push_back({
+                            newOrder->isBuy() ? newOrder->GetId() : existingOrder->GetId(),
+                            newOrder->isBuy() ? existingOrder->GetId() : newOrder->GetId(),
+                            currentPrice,
+                            tradeAmount
+                        });
 
                         // Fully executed order cleanup
                         if (existingOrder->GetAttribute() == 0) {
@@ -152,6 +159,13 @@ void OrderBook::MatchOrder(std::unique_ptr<Order> newOrder) {
 
                         std::cout << "[TRADE EXECUTED] " << tradeAmount << " shares matched at $"
                                   << currentPrice << " (Seller ID: " << newOrder->GetId() << ")" << std::endl;
+//record execution in ledger
+                        tradeLedger.push_back({
+                             newOrder->isBuy() ? newOrder->GetId() : existingOrder->GetId(),
+                             newOrder->isBuy() ? existingOrder->GetId() : newOrder->GetId(),
+                             currentPrice,
+                             tradeAmount
+                         });
 
                         // Fully executed order cleanup
                         if (existingOrder->GetAttribute() == 0) {
@@ -336,4 +350,36 @@ void OrderBook::ExecuteMarketOrder(bool isBuySide, int requestedQty) {
     } else {
         std::cout << " [MARKET ORDER FULLY FILLED] Execution completed successfully." << std::endl;
     }
+}
+// 6. Print Execution Journal
+void OrderBook::PrintTradeHistory() const {
+    std::cout << "\n--- Trade Execution History ---" << std::endl;
+
+    if (tradeLedger.empty()) {
+        std::cout << "No trades were made." << std::endl;
+        std::cout << "-------------------------------" << std::endl;
+        return;
+    }
+
+    double totalTurnover = 0.0;
+    int totalVolume = 0;
+
+    for (const auto& trade : tradeLedger) {
+        double tradeValue = trade.price * trade.quantity;
+        totalTurnover += tradeValue;
+        totalVolume += trade.quantity;
+
+        std::cout << "Match: Buyer #" << trade.buyerId
+                  << " <-> Seller #" << trade.sellerId
+                  << " | " << trade.quantity << " shares @ $" << trade.price
+                  << " (Total: $" << tradeValue << ")" << std::endl;
+    }
+
+    double vwap = (totalVolume > 0) ? (totalTurnover / totalVolume) : 0.0;
+
+    std::cout << "\nSummary:" << std::endl;
+    std::cout << "- Total shares traded: " << totalVolume << std::endl;
+    std::cout << "- Total money spent: $" << totalTurnover << std::endl;
+    std::cout << "- Average execution price (VWAP): $" << vwap << std::endl;
+    std::cout << "--------------------------------\n" << std::endl;
 }

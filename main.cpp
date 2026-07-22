@@ -137,7 +137,15 @@ int main() {
 
     std::cout << "\n--- Final Book State after V2 Deep Sweep ---" << std::endl;
     book.PrintOrderBook();
+    // -----------------------------------------------------------------
+    // TEST 8: Trade Ledger & History Summary
+    // -----------------------------------------------------------------
+    std::cout << "\n[TEST 8] Printing Trade History & Analytics..." << std::endl;
+
+    // Call the execution journal to display all matched trades
+    book.PrintTradeHistory();
 
     return 0;
+
 
 }
