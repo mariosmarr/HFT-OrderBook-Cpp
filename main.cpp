@@ -145,6 +145,44 @@ int main() {
     // Call the execution journal to display all matched trades
     book.PrintTradeHistory();
 
+
+    // TEST 9: High-Throughput & Latency Micro-Benchmark (10,000 Orders)
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << " [TEST 9] RUNNING HIGH-THROUGHPUT BENCHMARK (10k Orders)" << std::endl;
+    std::cout << "==================================================" << std::endl;
+
+    OrderBook benchBook;
+    const int TOTAL_ORDERS = 10000;
+
+    // Start measuring high-precision time
+    auto benchStart = std::chrono::high_resolution_clock::now();
+
+    for (int i = 1; i <= TOTAL_ORDERS; ++i) {
+        if (i % 2 == 0) {
+            // Even IDs: Ask (Sell) at prices around $100.0
+            benchBook.MatchOrder(std::make_unique<SellOrder>(100.0 + (i % 5), 10));
+        } else {
+            // Odd IDs: Bid (Buy) at prices around $100.0
+            benchBook.MatchOrder(std::make_unique<BuyOrder>(100.0 + (i % 5), 10));
+        }
+    }
+
+    auto benchEnd = std::chrono::high_resolution_clock::now();
+
+    // Calculate Latency and Throughput metrics
+    auto totalDurationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(benchEnd - benchStart).count();
+    double totalDurationMs = totalDurationNs / 1000000.0;
+    double avgLatencyPerOrderNs = static_cast<double>(totalDurationNs) / TOTAL_ORDERS;
+    double ordersPerSecond = (TOTAL_ORDERS / (totalDurationNs / 1000000000.0));
+
+    std::cout << "\n📊 BENCHMARK RESULTS:" << std::endl;
+    std::cout << "--------------------------------------------------" << std::endl;
+    std::cout << "- Total Processed Orders : " << TOTAL_ORDERS << " orders" << std::endl;
+    std::cout << "- Total Execution Time   : " << totalDurationMs << " ms (" << totalDurationNs << " ns)" << std::endl;
+    std::cout << "- Avg Latency per Order  : " << avgLatencyPerOrderNs << " ns" << std::endl;
+    std::cout << "- Engine Throughput      : " << static_cast<long long>(ordersPerSecond) << " orders/sec" << std::endl;
+    std::cout << "--------------------------------------------------\n" << std::endl;
+
     return 0;
 
 
