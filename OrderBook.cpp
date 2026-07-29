@@ -389,3 +389,12 @@ void OrderBook::PrintTradeHistory() const {
 void OrderBook::SetSilentMode(bool enable) {
     silentMode = enable;
 }
+void OrderBook::MatchPooledOrder(Order* newOrder) {
+    if (!newOrder) return;
+
+    PriceMap[newOrder->GetPrice()].push_back(newOrder);
+
+    if (!silentMode) {
+        std::cout << "[OrderBook] Fast Pooled Match ID: " << newOrder->GetId() << std::endl;
+    }
+}

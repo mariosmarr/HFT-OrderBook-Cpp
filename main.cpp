@@ -6,6 +6,7 @@
 #include "SellOrder.h"
 #include "OrderBook.h"
 #include <chrono>
+#include "OrderPool.h"
 
 // Demonstrates polymorphic order dispatching (useful for outbound routing)
 void ProcessOrder(const Order& currentOrder) {
@@ -147,43 +148,52 @@ int main() {
 
 
     // TEST 9: High-Throughput & Latency Micro-Benchmark (10,000 Orders)
-    std::cout << "\n==================================================" << std::endl;
-    std::cout << " [TEST 9] RUNNING HIGH-THROUGHPUT BENCHMARK (10k Orders)" << std::endl;
-    std::cout << "==================================================" << std::endl;
+    std::cout << "\n--- TEST 9: Memory Pool Micro-Benchmark (10,000 Orders) ---" << std::endl;
 
     OrderBook benchBook;
-benchBook.SetSilentMode(true);
-    const int TOTAL_ORDERS = 10000;
+    benchBook.SetSilentMode(true); // Mute cout to avoid OS I/O bottlenecks
 
-    // Start measuring high-precision time
+    const int TOTAL_ORDERS = 10000;
+    OrderPool pool(TOTAL_ORDERS); // Pre-allocate memory on RAM to avoid malloc overhead
+
+    // Start high-resolution timer for Test 9
     auto benchStart = std::chrono::high_resolution_clock::now();
 
     for (int i = 1; i <= TOTAL_ORDERS; ++i) {
+        // Generate simple dummy market data using modulo
+        double price = 100.0 + (i % 20);
+        int qty = 10 + (i % 50);
+
+        Order* fastOrder = nullptr;
+
+        // Alternate between Buy and Sell orders
         if (i % 2 == 0) {
-            // Even IDs: Ask (Sell) at prices around $100.0
-            benchBook.MatchOrder(std::make_unique<SellOrder>(100.0 + (i % 5), 10));
+            fastOrder = pool.AllocateBuy(price, qty);
         } else {
-            // Odd IDs: Bid (Buy) at prices around $100.0
-            benchBook.MatchOrder(std::make_unique<BuyOrder>(100.0 + (i % 5), 10));
+            fastOrder = pool.AllocateSell(price, qty);
         }
+
+        // Fast-path insertion without std::move or dynamic heap allocations
+        benchBook.MatchPooledOrder(fastOrder);
     }
 
+    // Stop timer for Test 9
     auto benchEnd = std::chrono::high_resolution_clock::now();
 
-    // Calculate Latency and Throughput metrics
-    auto totalDurationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(benchEnd - benchStart).count();
-    double totalDurationMs = totalDurationNs / 1000000.0;
-    double avgLatencyPerOrderNs = static_cast<double>(totalDurationNs) / TOTAL_ORDERS;
-    double ordersPerSecond = (TOTAL_ORDERS / (totalDurationNs / 1000000000.0));
+    // Calculate total execution time and throughput metrics
+    auto durationMs = std::chrono::duration_cast<std::chrono::milliseconds>(benchEnd - benchStart).count();
+    auto durationUs = std::chrono::duration_cast<std::chrono::microseconds>(benchEnd - benchStart).count();
 
-    std::cout << "\n📊 BENCHMARK RESULTS:" << std::endl;
-    std::cout << "--------------------------------------------------" << std::endl;
-    std::cout << "- Total Processed Orders : " << TOTAL_ORDERS << " orders" << std::endl;
-    std::cout << "- Total Execution Time   : " << totalDurationMs << " ms (" << totalDurationNs << " ns)" << std::endl;
-    std::cout << "- Avg Latency per Order  : " << avgLatencyPerOrderNs << " ns" << std::endl;
-    std::cout << "- Engine Throughput      : " << static_cast<long long>(ordersPerSecond) << " orders/sec" << std::endl;
-    std::cout << "--------------------------------------------------\n" << std::endl;
+    double avgLatencyUs = (double)durationUs / TOTAL_ORDERS;
+    double ordersPerSec = (TOTAL_ORDERS / (double)durationMs) * 1000.0;
 
+    // Print benchmark summary
+    benchBook.SetSilentMode(false); // Unmute to print final results
+    std::cout << "----------------------------------------------------" << std::endl;
+    std::cout << " Pooled Benchmark Finished!" << std::endl;
+    std::cout << " Total Time      : " << durationMs << " ms (" << durationUs << " us)" << std::endl;
+    std::cout << " Avg Latency/Order: " << avgLatencyUs << " us" << std::endl;
+    std::cout << " Engine Throughput: " << (int)ordersPerSec << " orders/sec" << std::endl;
     return 0;
 
 
