@@ -18,6 +18,7 @@ struct TradeMatch {
 };
 class OrderBook {
 private:
+    bool silentMode = false;
     // Holds full ownership of all active orders for O(1) lifecycle management
     std::unordered_map<int, std::unique_ptr<Order>> orderMap;
 
@@ -38,8 +39,10 @@ public:
     void MatchOrder(std::unique_ptr<Order> newOrder);
     void PrintOrderBook() const;
 
+
     void ExecuteMarketOrder(bool isBuySide,int requestedQty);
     void PrintTradeHistory() const;
+    void SetSilentMode(bool silentMode);
 };
 
 #endif // UNTITLED6_ORDERBOOK_H

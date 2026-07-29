@@ -152,6 +152,7 @@ int main() {
     std::cout << "==================================================" << std::endl;
 
     OrderBook benchBook;
+benchBook.SetSilentMode(true);
     const int TOTAL_ORDERS = 10000;
 
     // Start measuring high-precision time

@@ -53,8 +53,9 @@ void OrderBook::InsertOrder(std::unique_ptr<Order> newOrder) {
     // Keep a non-owning raw pointer for matching and sorting in the limit queue
     Order* rawOrderPtr = orderMap[id].get();
     PriceMap[price].push_back(rawOrderPtr);
-
+if (!silentMode) {
     std::cout << "[OrderBook] Successfully inserted Order ID: " << id << " at Price: $" << price << std::endl;
+}
 }
 
 // 3. Get Total Volume at a Specific Price Level
@@ -105,9 +106,10 @@ void OrderBook::MatchOrder(std::unique_ptr<Order> newOrder) {
                         quantity -= tradeAmount;
                         int updatedExistingQty = existingOrder->GetAttribute() - tradeAmount;
                         existingOrder->SetQuantity(updatedExistingQty);
-
-                       std::cout << "[TRADE EXECUTED] " << tradeAmount << " shares matched at $"
-                                  << currentPrice << " (Buyer ID: " << newOrder->GetId() << ")" << std::endl;
+if (silentMode) {
+    std::cout << "[TRADE EXECUTED] " << tradeAmount << " shares matched at $"
+               << currentPrice << " (Buyer ID: " << newOrder->GetId() << ")" << std::endl;
+}
                         // Record execution in ledger
                         tradeLedger.push_back({
                             newOrder->isBuy() ? newOrder->GetId() : existingOrder->GetId(),
@@ -156,9 +158,10 @@ void OrderBook::MatchOrder(std::unique_ptr<Order> newOrder) {
                         quantity -= tradeAmount;
                         int updatedExistingQty = existingOrder->GetAttribute() - tradeAmount;
                         existingOrder->SetQuantity(updatedExistingQty);
-
-                        std::cout << "[TRADE EXECUTED] " << tradeAmount << " shares matched at $"
-                                  << currentPrice << " (Seller ID: " << newOrder->GetId() << ")" << std::endl;
+if (silentMode) {
+    std::cout << "[TRADE EXECUTED] " << tradeAmount << " shares matched at $"
+              << currentPrice << " (Seller ID: " << newOrder->GetId() << ")" << std::endl;
+}
 //record execution in ledger
                         tradeLedger.push_back({
                              newOrder->isBuy() ? newOrder->GetId() : existingOrder->GetId(),
@@ -382,4 +385,7 @@ void OrderBook::PrintTradeHistory() const {
     std::cout << "- Total money spent: $" << totalTurnover << std::endl;
     std::cout << "- Average execution price (VWAP): $" << vwap << std::endl;
     std::cout << "--------------------------------\n" << std::endl;
+}
+void OrderBook::SetSilentMode(bool enable) {
+    silentMode = enable;
 }
