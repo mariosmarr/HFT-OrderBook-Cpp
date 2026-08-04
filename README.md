@@ -26,8 +26,17 @@ Features
 
 Benchmark Progression (10,000 Orders)
 --------------------------------------
-1. Standard Mode (with std::cout)    : 6,587 ms | ~658 us per order |     1,518 orders/sec
-2. Silent Mode (no std::cout)        : 4,410 ms | ~441 us per order |     2,267 orders/sec
-3. Memory Pool Mode (Zero Heap Alloc):    1 ms | ~0.11 us per order| 10,000,000 orders/sec
+1. Standard Mode (with std::cout)        : 6,587 ms | ~658 us per order |     1,518 orders/sec
+2. Silent Mode (no std::cout)            : 4,410 ms | ~441 us per order |     2,267 orders/sec
+3. Dynamic Memory Pool Mode              :     3 ms | ~0.36 us per order | 3,330,000 orders/sec
+4. Flat Array Direct Indexing (Cache Align):  10 ms | ~1.00 us per order |   992,161 orders/sec
 
-Key Takeaway: Removing runtime heap allocations via pre-allocated memory pools boosted throughput by over 4,000x, lowering order execution latency down to sub-microsecond level (~119 nanoseconds).
+Tail Latency Profiling (10,000 Orders Run)
+-------------------------------------------
+- P50 (Median Latency) :  800 ns (0.8 us)
+- P90 Latency          : 1500 ns (1.5 us)
+- P99 (Tail Latency)   : 2800 ns (2.8 us)
+- Max Latency          : 172.4 us (OS context switch / cache miss)
+
+Key Takeaway:
+Aligning memory structures with 64-byte L1 cache lines (`alignas(64)`), using inline getters, and removing heap allocations reduced execution latency down to sub-microsecond levels (800ns P50 median).
