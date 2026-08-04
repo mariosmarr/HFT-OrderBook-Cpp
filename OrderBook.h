@@ -10,7 +10,7 @@
 #include <map>
 
 // Represents a single executed transaction between two market participants
-struct TradeMatch {
+struct alignas(64) TradeMatch {
     int buyerId;
     int sellerId;
     double price;
@@ -18,6 +18,27 @@ struct TradeMatch {
 };
 class OrderBook {
 private:
+    // Fixed-size Array for Direct Indexing Optimization
+    static constexpr size_t MAX_PRICE_LEVELS = 1000;
+    static constexpr double BASE_PRICE = 100.00;
+
+    // Array of vectors for contiguous memory layout
+    alignas(64) std::vector<Order*> priceArray[MAX_PRICE_LEVELS];
+
+    int minActiveIndex = MAX_PRICE_LEVELS;
+    int maxActiveIndex = -1;
+    // Converts a limit price to a fixed array index in O(1) time
+    inline int PriceToIndex(double price) const {
+        int index = static_cast<int>((price - BASE_PRICE) * 100.0);
+        if (index < 0) return 0;
+        if (index >= static_cast<int>(MAX_PRICE_LEVELS)) return MAX_PRICE_LEVELS - 1;
+        return index;
+    }
+
+public:
+    // High-frequency matching function using flat array structure
+    void MatchFlatPooledOrder(Order* newOrder);
+
     bool silentMode = false;
     // Holds full ownership of all active orders for O(1) lifecycle management
     std::unordered_map<int, std::unique_ptr<Order>> orderMap;

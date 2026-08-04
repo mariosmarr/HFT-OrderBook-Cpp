@@ -388,13 +388,208 @@ void OrderBook::PrintTradeHistory() const {
 }
 void OrderBook::SetSilentMode(bool enable) {
     silentMode = enable;
-}
+}void OrderBook::MatchFlatPooledOrder(Order* newOrder) {
+    if (!newOrder) [[unlikely]] return;
+
+    double price = newOrder->GetPrice();
+    int quantity = newOrder->GetAttribute();
+    int targetIndex = PriceToIndex(price);
+
+    // Scenario A: Incoming BUY order matches against resting SELL orders
+    if (newOrder->isBuy()) [[likely]] {
+        int startSearch = std::max(0, minActiveIndex);
+
+        for (int i = startSearch; i <= targetIndex && quantity > 0; ++i) {
+            auto& orderList = priceArray[i];
+            if (orderList.empty()) [[unlikely]] continue;
+
+            auto itVector = orderList.begin();
+            while (itVector != orderList.end() && quantity > 0) {
+                Order* existingOrder = *itVector;
+
+                if (existingOrder && !existingOrder->isBuy() && existingOrder->GetAttribute() > 0) {
+                    int tradeAmount = std::min(quantity, existingOrder->GetAttribute());
+
+                    quantity -= tradeAmount;
+                    existingOrder->SetQuantity(existingOrder->GetAttribute() - tradeAmount);
+
+                    tradeLedger.push_back({
+                        newOrder->GetId(),
+                        existingOrder->GetId(),
+                        BASE_PRICE + (i / 100.0),
+                        tradeAmount
+                    });
+
+                    if (existingOrder->GetAttribute() == 0) {
+                        itVector = orderList.erase(itVector);
+                        continue;
+                    }
+                }
+                ++itVector;
+            }
+        }
+    }
+    // Scenario B: Incoming SELL order matches against resting BUY orders
+    else {
+        int startSearch = std::min(static_cast<int>(MAX_PRICE_LEVELS) - 1, maxActiveIndex);
+
+        for (int i = startSearch; i >= targetIndex && quantity > 0; --i) {
+            auto& orderList = priceArray[i];
+            if (orderList.empty()) [[unlikely]] continue;
+
+            auto itVector = orderList.begin();
+            while (itVector != orderList.end() && quantity > 0) {
+                Order* existingOrder = *itVector;
+
+                if (existingOrder && existingOrder->isBuy() && existingOrder->GetAttribute() > 0) {
+                    int tradeAmount = std::min(quantity, existingOrder->GetAttribute());
+
+                    quantity -= tradeAmount;
+                    existingOrder->SetQuantity(existingOrder->GetAttribute() - tradeAmount);
+
+                    tradeLedger.push_back({
+                        existingOrder->GetId(),
+                        newOrder->GetId(),
+                        BASE_PRICE + (i / 100.0),
+                        tradeAmount
+                    });
+
+                    if (existingOrder->GetAttribute() == 0) {
+                        itVector = orderList.erase(itVector);
+                        continue;
+                    }
+                }
+                ++itVector;
+            }
+        }
+    }
+
+    // Insert remaining volume directly into the flat price level & update bounds
+    if (quantity > 0) {
+        newOrder->SetQuantity(quantity);
+        priceArray[targetIndex].push_back(newOrder);
+
+        if (targetIndex < minActiveIndex) minActiveIndex = targetIndex;
+        if (targetIndex > maxActiveIndex) maxActiveIndex = targetIndex;
+    }
+}// Matches an incoming order using the std::map price structure (TEST 9)
 void OrderBook::MatchPooledOrder(Order* newOrder) {
+    // Guard clause: Ignore null order pointers
     if (!newOrder) return;
 
-    PriceMap[newOrder->GetPrice()].push_back(newOrder);
+    double price = newOrder->GetPrice();
+    int quantity = newOrder->GetAttribute();
 
-    if (!silentMode) {
-        std::cout << "[OrderBook] Fast Pooled Match ID: " << newOrder->GetId() << std::endl;
+    // =========================================================================
+    // SCENARIO A: Incoming BUY Order -> Match against resting SELL orders
+    // =========================================================================
+    if (newOrder->isBuy()) {
+        auto itMap = PriceMap.begin();
+
+        // Iterate through price levels from lowest up to buy limit price
+        while (itMap != PriceMap.end() && quantity > 0) {
+            double currentPrice = itMap->first;
+            auto& orderList = itMap->second;
+
+            // Check if current sell price is within buyer's limit price
+            if (currentPrice <= price) {
+                auto itVector = orderList.begin();
+
+                // Process orders at current price level FIFO
+                while (itVector != orderList.end() && quantity > 0) {
+                    Order* existingOrder = *itVector;
+
+                    // Match against active SELL orders
+                    if (existingOrder && !existingOrder->isBuy() && existingOrder->GetAttribute() > 0) {
+                        int tradeAmount = std::min(quantity, existingOrder->GetAttribute());
+
+                        quantity -= tradeAmount;
+                        existingOrder->SetQuantity(existingOrder->GetAttribute() - tradeAmount);
+
+                        // Record trade in execution history
+                        tradeLedger.push_back({
+                            newOrder->GetId(),
+                            existingOrder->GetId(),
+                            currentPrice,
+                            tradeAmount
+                        });
+
+                        // Remove fully filled order from queue
+                        if (existingOrder->GetAttribute() == 0) {
+                            itVector = orderList.erase(itVector);
+                            continue;
+                        }
+                    }
+                    ++itVector;
+                }
+
+                // Remove empty price level from map
+                if (orderList.empty()) {
+                    itMap = PriceMap.erase(itMap);
+                    continue;
+                }
+            }
+            ++itMap;
+        }
+    }
+    // =========================================================================
+    // SCENARIO B: Incoming SELL Order -> Match against resting BUY orders
+    // =========================================================================
+    else {
+        auto itMap = PriceMap.begin();
+
+        // Iterate through price levels to find eligible buy limit prices
+        while (itMap != PriceMap.end() && quantity > 0) {
+            double currentPrice = itMap->first;
+            auto& orderList = itMap->second;
+
+            // Check if current buy price is within seller's limit price
+            if (currentPrice >= price) {
+                auto itVector = orderList.begin();
+
+                // Process orders at current price level FIFO
+                while (itVector != orderList.end() && quantity > 0) {
+                    Order* existingOrder = *itVector;
+
+                    // Match against active BUY orders
+                    if (existingOrder && existingOrder->isBuy() && existingOrder->GetAttribute() > 0) {
+                        int tradeAmount = std::min(quantity, existingOrder->GetAttribute());
+
+                        quantity -= tradeAmount;
+                        existingOrder->SetQuantity(existingOrder->GetAttribute() - tradeAmount);
+
+                        // Record trade in execution history
+                        tradeLedger.push_back({
+                            existingOrder->GetId(),
+                            newOrder->GetId(),
+                            currentPrice,
+                            tradeAmount
+                        });
+
+                        // Remove fully filled order from queue
+                        if (existingOrder->GetAttribute() == 0) {
+                            itVector = orderList.erase(itVector);
+                            continue;
+                        }
+                    }
+                    ++itVector;
+                }
+
+                // Remove empty price level from map
+                if (orderList.empty()) {
+                    itMap = PriceMap.erase(itMap);
+                    continue;
+                }
+            }
+            ++itMap;
+        }
+    }
+
+    // =========================================================================
+    // RESIDUAL PROCESSING: Store unfilled order volume in std::map queue
+    // =========================================================================
+    if (quantity > 0) {
+        newOrder->SetQuantity(quantity);
+        PriceMap[price].push_back(newOrder);
     }
 }

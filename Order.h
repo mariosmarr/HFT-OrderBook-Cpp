@@ -1,30 +1,32 @@
-#ifndef UNTITLED6_ORDER_H
-#define UNTITLED6_ORDER_H
+#ifndef ORDER_H
+#define ORDER_H
 
 #include <iostream>
 
 class Order {
 protected:
-    int Attribute; // Represents quantity/shares of the order
     int id;
-    static int orderCounter; // Shared across all instances for auto-increment IDs
     double price;
+    int Attribute;
+    bool isBuySide;
+
+    static int orderCounter;
 
 public:
-    // Constructor & Destructor
-    Order(double pricee, int Attri);
+    // Constructors & Destructor
+Order(double pricee, int Attri, bool isBuy = true);
     virtual ~Order();
 
-    // Getters & Setters (Encapsulation)
-    int GetId() const;
-    double GetPrice() const;
-    void SetPrice(double newprice);
-    int GetAttribute() const;
-    void SetQuantity(int newQuantity);
+    //  Hot-Path Inline Getters/Setters
+    [[nodiscard]] inline int GetId() const { return id; }
+    [[nodiscard]] inline double GetPrice() const { return price; }
+    [[nodiscard]] inline int GetAttribute() const { return Attribute; }
+    [[nodiscard]] inline bool isBuy() const { return isBuySide; }
 
-    // Polymorphic Methods
+    inline void SetPrice(double newprice) { price = newprice; }
+    inline void SetQuantity(int newQuantity) { Attribute = newQuantity; }
+
     virtual void Print() const;
-    virtual bool isBuy() = 0; // Pure Virtual - enforces Buy/Sell distinction
 };
 
-#endif // UNTITLED6_ORDER_H
+#endif // ORDER_H

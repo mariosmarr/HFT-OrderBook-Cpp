@@ -6,14 +6,13 @@
 // Represents a Bid (Buy side of the Order Book)
 class BuyOrder : public Order {
 public:
-    BuyOrder(double pricee, int Attri) : Order(pricee, Attri) {}
-
+    BuyOrder(double pricee, int Attri) : Order(pricee, Attri, true) {}
     // Overriding polymorphic methods
     void Print() const override {
         std::cout << "[BUY] Order ID: " << id << " | Price: $" << price << std::endl;
     }
 
-    bool isBuy() override {
+    bool isBuy() const {
         return true;
     }
 };
