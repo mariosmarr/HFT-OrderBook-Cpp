@@ -9,6 +9,8 @@
 #include "OrderPool.h"
 #include <algorithm>
 #include <numeric>
+#include <thread>
+#include "SPSCQueue.h"
 
 
 void PrintLatencyStats(std::vector<uint64_t>& latencies) {
@@ -264,6 +266,76 @@ int main() {
 
     // ⚡ 3. ΕΚΤΥΠΩΣΗ P50, P90, P99 TAIL LATENCY
     PrintLatencyStats(latencies);
+// -----------------------------------------------------------------
+    // TEST 11: Multi-Threaded SPSC Lock-Free Queue Benchmark (10,000 Orders)
+    // -----------------------------------------------------------------
+    std::cout << "\n--- TEST 11: Multi-Threaded SPSC Lock-Free Queue Benchmark (10,000 Orders) ---" << std::endl;
 
+    OrderBook threadedBook;
+    threadedBook.SetSilentMode(true);
+
+    OrderPool threadedPool(20000);        // Προ-δέσμευση 20.000 εντολών στη RAM
+    SPSCQueue<Order*, 20000> spscQueue;   // Lock-Free ουρά 20.000 θέσεων
+
+    std::vector<uint64_t> threadLatencies;
+    threadLatencies.reserve(TOTAL_ORDERS);
+
+    auto spscStart = std::chrono::high_resolution_clock::now();
+
+    // PRODUCER THREAD (Νήμα Δικτύου - Παραγωγός)
+    std::thread producer([&]() {
+        for (int i = 1; i <= TOTAL_ORDERS; ++i) {
+            double price = 100.0 + (i % 8);
+            int qty = 10 + (i % 50);
+
+            // 1. Δέσμευση μνήμης O(1) από το Pool
+            Order* fastOrder = (i % 2 == 0)
+                ? static_cast<Order*>(threadedPool.AllocateBuy(price, qty))
+                : static_cast<Order*>(threadedPool.AllocateSell(price, qty));
+
+            // 2. Lock-Free Push στην SPSC Queue
+            while (!spscQueue.Push(fastOrder)) {
+                std::this_thread::yield(); // Αναμονή αν γέμισε η ουρά
+            }
+        }
+    });
+
+    // CONSUMER THREAD (Matching Engine - Καταναλωτής στο Main Thread)
+    int processedCount = 0;
+    while (processedCount < TOTAL_ORDERS) {
+        Order* incomingOrder = nullptr;
+
+        // 1. Lock-Free Pop από την SPSC Queue
+        if (spscQueue.Pop(incomingOrder)) {
+            auto opStart = std::chrono::high_resolution_clock::now();
+
+            // 2. Direct Indexing O(1) Execution στο OrderBook
+            threadedBook.MatchFlatPooledOrder(incomingOrder);
+
+            auto opEnd = std::chrono::high_resolution_clock::now();
+            uint64_t opDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(opEnd - opStart).count();
+            threadLatencies.push_back(opDuration);
+
+            processedCount++;
+        } else {
+            std::this_thread::yield(); // Αναμονή αν η ουρά είναι άδεια
+        }
+    }
+
+    producer.join(); // Περιμένουμε το Producer thread να ολοκληρώσει
+
+    auto spscEnd = std::chrono::high_resolution_clock::now();
+
+    auto spscDurationUs = std::chrono::duration_cast<std::chrono::microseconds>(spscEnd - spscStart).count();
+    double spscAvgLatencyUs = (double)spscDurationUs / TOTAL_ORDERS;
+    double spscOrdersPerSec = (spscDurationUs > 0) ? ((double)TOTAL_ORDERS / spscDurationUs) * 1000000.0 : 0.0;
+
+    std::cout << "----------------------------------------------------" << std::endl;
+    std::cout << " SPSC Lock-Free Multi-Threaded Benchmark Finished!" << std::endl;
+    std::cout << " Total Multi-Thread Time: " << spscDurationUs << " us" << std::endl;
+    std::cout << " Avg Execution Latency  : " << spscAvgLatencyUs << " us" << std::endl;
+    std::cout << " Real-Time Throughput   : " << static_cast<long long>(spscOrdersPerSec) << " orders/sec" << std::endl;
+
+    PrintLatencyStats(threadLatencies);
     return 0;
 }
