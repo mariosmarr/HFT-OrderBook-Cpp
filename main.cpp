@@ -12,6 +12,18 @@
 #include <thread>
 #include "SPSCQueue.h"
 #include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+#pragma comment(lib, "ws2_32.lib")
+
+#pragma pack(push, 1)
+struct NetworkOrder {
+    uint8_t isBuy;
+    double price;
+    int32_t qty;
+};
+#pragma pack(pop)
 
 
 
@@ -287,25 +299,68 @@ int main() {
     SetThreadAffinityMask(mainThread, consumerMask);
     auto spscStart = std::chrono::high_resolution_clock::now();
 
-    // PRODUCER THREAD
+    // PRODUCER THREAD (UDP Network Server)
     std::thread producer([&]() {
+        // 1. Pin this thread to CPU Core 0 for better performance
         HANDLE myThread = GetCurrentThread();
-        DWORD_PTR producerMask = (1ULL << 4);
+        DWORD_PTR producerMask = (1ULL << 0);
         SetThreadAffinityMask(myThread, producerMask);
+
+        // 2. Start Windows network tools (Winsock)
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            std::cerr << "Winsock initialization failed!" << std::endl;
+            return;
+        }
+
+        // 3. Create the UDP socket (our network connection point)
+        SOCKET udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (udpSocket == INVALID_SOCKET) {
+            std::cerr << "Socket creation failed!" << std::endl;
+            WSACleanup();
+            return;
+        }
+
+        // 4. Setup the server to listen on Port 8080 from any IP address
+        sockaddr_in serverAddr;
+        serverAddr.sin_family = AF_INET;
+        serverAddr.sin_port = htons(8080);
+        serverAddr.sin_addr.s_addr = INADDR_ANY;
+
+        // 5. Bind the socket to the port so we can start listening
+        if (bind(udpSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+            std::cerr << "Bind failed!" << std::endl;
+            closesocket(udpSocket);
+            WSACleanup();
+            return;
+        }
+
+        std::cout << "\n🌐 [NETWORK] UDP Server listening on Port 8080..." << std::endl;
+
+        // 6. Main Loop: Wait for network packets (Orders)
+        NetworkOrder netOrder;
         for (int i = 1; i <= TOTAL_ORDERS; ++i) {
-            double price = 100.0 + (i % 8);
-            int qty = 10 + (i % 50);
 
-            Order* fastOrder = (i % 2 == 0)
-                ? static_cast<Order*>(threadedPool.AllocateBuy(price, qty))
-                : static_cast<Order*>(threadedPool.AllocateSell(price, qty));
+            // The thread pauses (blocks) here until it receives 13 bytes of data
+            int bytesReceived = recvfrom(udpSocket, (char*)&netOrder, sizeof(NetworkOrder), 0, nullptr, nullptr);
 
-            while (!spscQueue.Push(fastOrder)) {
-                std::this_thread::yield();
+            if (bytesReceived == sizeof(NetworkOrder)) {
+                // Create the order instantly using our pre-allocated Memory Pool
+                Order* fastOrder = (netOrder.isBuy == 1)
+                    ? static_cast<Order*>(threadedPool.AllocateBuy(netOrder.price, netOrder.qty))
+                    : static_cast<Order*>(threadedPool.AllocateSell(netOrder.price, netOrder.qty));
+
+                // Push the order to the Consumer using the Lock-Free Queue
+                while (!spscQueue.Push(fastOrder)) {
+                    std::this_thread::yield();
+                }
             }
         }
-    });
 
+        // Clean up and close the network connection when done
+        closesocket(udpSocket);
+        WSACleanup();
+    });
 
 
     // CONSUMER THREAD (Matching Engine)

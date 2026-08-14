@@ -14,3 +14,5 @@ add_executable(untitled6 main.cpp
         OrderPool.h
         SPSCQueue.cpp
         SPSCQueue.h)
+
+target_link_libraries(untitled6 ws2_32)
