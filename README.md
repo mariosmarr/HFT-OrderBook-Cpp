@@ -1,70 +1,61 @@
-Low-Latency C++ Matching Engine and Binary UDP Gateway
-
-A multi-threaded Limit Order Book and Order Matching Engine written in C++20 to study low-latency data structures, lock-free concurrency, execution speed, and end-to-end UDP network ingestion.
+Ultra-Low Latency C++ Matching Engine and Binary UDP Gateway
+A multi-threaded Limit Order Book (LOB) and Order Matching Engine written in C++20. This project serves as an advanced study in low-latency data structures, zero-allocation memory management, lock-free concurrency, and end-to-end UDP network ingestion.
 
 Architecture
+To achieve sub-microsecond execution latency and maintain strict price-time priority (FIFO), the engine replaces traditional node-based data structures with contiguous, cache-friendly alternatives, combining the following core components:
 
-To achieve ultra-low execution latency and maintain price-time priority (FIFO), the engine combines the following core components:
+External Client and Network Ingestion
+A Python client dispatches 13-byte binary UDP datagrams. A Winsock2 UDP socket listens on Port 8080. Incoming packets are parsed directly from raw memory with zero serialization overhead using #pragma pack(1). The network thread fetches a pre-allocated order object and pushes it onto a lock-free queue.
 
-External Client and Network Ingestion (Core 0)
-A Python client dispatches 13-byte binary UDP datagrams. A Winsock2 UDP socket listens on Port 8080. When a packet arrives, an order object is fetched from a pre-allocated Memory Pool and pushed onto a lock-free queue.
+Zero-Allocation Order Book
+All standard library associative containers (std::map, std::unordered_map) have been completely removed to prevent dynamic heap allocations (new/delete) and hashing overhead during the execution hot-path.
 
-Master Registry and Direct Indexing
+Master Registry: A static array of raw pointers acts as the central order registry. Order IDs map directly to array indices, guaranteeing true O(1) lookups and cancellations without hash collisions.
 
-std::unordered_map: Master registry for O(1) order lookup and safe cancellation by ID using RAII.
+Flat Direct Indexing: Price levels are managed via a fixed-size, contiguous array (priceArray). This structure eliminates the need for Red-Black tree allocations and significantly improves spatial locality during deep market order sweeps.
 
-Flat Direct Indexing: Price level structure that keeps limit orders sorted while preserving FIFO execution order.
+Hardware Sympathy and Memory Management
+Custom Order Pool: A memory pool pre-allocates contiguous memory blocks for all order objects during engine initialization.
 
-Custom Order Memory Pool (OrderPool)
-Pre-allocates contiguous memory blocks during engine initialization to eliminate dynamic heap allocations (malloc-free) inside the execution hot-path.
+Cache-Line Alignment: The price level array is strictly aligned to 64-byte L1 cache lines (alignas(64)). This ensures sequential memory reads are highly optimized by the CPU's hardware prefetcher.
 
-Lock-Free SPSC Queue (SPSCQueue)
-Single-Producer Single-Consumer ring buffer using atomic memory orders (acquire/release) and 64-byte L1 cache-line alignment (alignas(64)) to eliminate thread locks and prevent False Sharing.
+Lock-Free SPSC Queue: A Single-Producer Single-Consumer ring buffer utilizes atomic memory orders (acquire/release) to pass data between threads without OS-level mutex locks, avoiding thread sleeping and false sharing.
 
-Hardware Sympathy and Thread Affinity
-Producer and consumer threads are pinned to isolated hardware cores (SetThreadAffinityMask) to maximize L1/L2 cache residency and reduce OS context switches.
+Thread Affinity: The producer thread (network ingestion) and consumer thread (matching engine) are explicitly pinned to isolated hardware CPU cores to maximize L1/L2 cache residency and eliminate OS context switching.
 
 Features
+Limit Orders (BID / ASK) with partial fills and resting volume logic.
 
-Limit Orders (BID / ASK) with partial fills and resting volume.
+Market Orders capable of multi-level liquidity sweeps.
 
-Market Orders with multi-level liquidity sweeps.
+Deterministic O(1) order cancellations.
 
-Fast O(1) order cancellations.
+Trade execution ledger with Volume-Weighted Average Price (VWAP) calculation.
 
-Multi-Threaded Architecture: Independent producer thread (network) and consumer thread (matching engine).
+Real-time tail latency tracking (P50, P90, P99).
 
-Trade execution history with VWAP (Volume-Weighted Average Price) calculation.
+Performance and Tail Latency Profiling
+The system has been benchmarked using 10,000 deterministic orders. The measurements focus on the raw matching engine throughput and the end-to-end latency via local UDP loopback.
 
-High-Performance Custom Order Pool for sub-microsecond memory allocations.
+Zero-Allocation Single-Thread Benchmark
 
-Binary Network Interface: Incoming network orders are parsed directly from raw memory with zero serialization overhead (#pragma pack).
+Throughput: ~898,000 orders/sec
 
-Real-time latency tracking (P50, P90, P99) and silent mode for precise benchmarking.
+P50 (Median Latency): 800 ns (0.8 us)
 
-Benchmark Progression (10,000 Orders)
+P90 Latency: 1800 ns (1.8 us)
 
-Standard Mode (with console output) : 6,587 ms | ~658.00 us per order | 1,518 orders/sec
+P99 Latency: 3000 ns (3.0 us)
 
-Silent Mode (no console output) : 4,410 ms | ~441.00 us per order | 2,267 orders/sec
+End-to-End UDP Ingestion and Core Pinning
 
-Memory Pool Mode (O(1) In-Memory) : 5 ms | ~0.51 us per order | 2,000,000 orders/sec
+P50 (Median Latency): 900 ns (0.9 us)
 
-Flat Array Direct Indexing : 9 ms | ~0.98 us per order | 1,017,604 orders/sec
+P90 Latency: 1500 ns (1.5 us)
 
-Multi-Threaded Lock-Free SPSC Queue : 10 ms | ~1.03 us per order | 963,112 orders/sec
+P99 Latency: 2700 ns (2.7 us)
 
-End-to-End UDP Ingestion and Core Pinning : - | ~1.20 us per order | Sub-microsecond core path
+Max Latency: ~186 us (Attributed to OS network stack interrupts and socket buffering)
 
-Tail Latency Profiling (Live UDP Ingestion Mode)
-
-P50 (Median Latency) : 1200 ns (1.2 us)
-
-P90 Latency : 1900 ns (1.9 us)
-
-P99 (Tail Latency) : 3100 ns (3.1 us)
-
-Max Latency : 146.3 us (OS network stack interrupt / core scheduling)
-
-Key Takeaway:
-Eliminating dynamic heap allocations, aligning atomic indices to 64-byte L1 cache lines (alignas(64)), replacing mutex locks with atomic acquire/release queues, and pinning threads to specific CPU cores reduced median matching latency from 658 microseconds down to 1.2 microseconds.
+Key Takeaway
+The transition from dynamic associative containers to strictly aligned flat arrays, combined with a custom memory pool and lock-free thread synchronization, successfully reduced median matching latency from over 600 microseconds down to sub-microsecond levels (800-900 nanoseconds).

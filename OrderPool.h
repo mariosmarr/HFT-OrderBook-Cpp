@@ -20,38 +20,35 @@ private:
 public:
     // Constructor: Allocates all memory upfront at setup phase
     explicit OrderPool(size_t cap) : capacity(cap) {
-        // resize() constructs 'cap' objects in memory right now
-        buyPool.resize(capacity,BuyOrder(0.0,0));
-        sellPool.resize(capacity,SellOrder(0.0,0));
+        // Step 1: Δεσμεύουμε την ακατέργαστη μνήμη χωρίς να φτιάξουμε αντικείμενα (Zero Copy)
+        buyPool.reserve(capacity);
+        sellPool.reserve(capacity);
+
+        // Step 2: Κατασκευάζουμε το κάθε αντικείμενο ΕΝΑ-ΕΝΑ απευθείας στη μνήμη.
+        // Έτσι ο static counter των IDs θα αυξάνεται κανονικά!
+        for (size_t i = 0; i < capacity; ++i) {
+            buyPool.emplace_back(0.0, 0);
+            sellPool.emplace_back(0.0, 0);
+        }
     }
 
     // Fast O(1) allocation for Buy Orders (Zero Heap Overhead)
     BuyOrder* AllocateBuy(double price, int qty) {
-        // Step 1: Grab pointer to the next pre-allocated object
         BuyOrder* order = &buyPool[buyIndex];
+        buyIndex = (buyIndex + 1) % capacity; // Ring buffer wrap-around
 
-        // Step 2: Advance index with circular wrap-around logic (Ring Buffer)
-        buyIndex = (buyIndex + 1) % capacity;
-
-        // Step 3: Overwrite old values in-place instead of creating a new object
         order->SetPrice(price);
         order->SetQuantity(qty);
-
         return order;
     }
 
     // Fast O(1) allocation for Sell Orders (Zero Heap Overhead)
     SellOrder* AllocateSell(double price, int qty) {
-        // Step 1: Grab pointer to the next pre-allocated object
         SellOrder* order = &sellPool[sellIndex];
+        sellIndex = (sellIndex + 1) % capacity; // Ring buffer wrap-around
 
-        // Step 2: Advance index with circular wrap-around logic (Ring Buffer)
-        sellIndex = (sellIndex + 1) % capacity;
-
-        // Step 3: Overwrite old values in-place instead of creating a new object
         order->SetPrice(price);
         order->SetQuantity(qty);
-
         return order;
     }
 
