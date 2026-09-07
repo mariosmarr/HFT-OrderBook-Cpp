@@ -1,9 +1,14 @@
-# IDE settings (CLion)
+# CLion & Build
 .idea/
-cmake-build-debug/
-cmake-build-release/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
 
-# Temporary scratch files
-kmkmm.cpp
-kmkmm.h
-poystis.cpp
+# Compiled executables
+*.exe
+*.o
+*.out
+
+# Python
+__pycache__/
+*.pyc
