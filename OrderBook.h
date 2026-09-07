@@ -6,7 +6,7 @@
 #include <algorithm>
 #include "Order.h"
 
-// Represents a single executed transaction between two market participants
+// Trade execution record aligned to cache line boundary
 struct alignas(64) TradeMatch {
     int buyerId;
     int sellerId;
@@ -16,21 +16,22 @@ struct alignas(64) TradeMatch {
 
 class OrderBook {
 private:
-    // Fixed-size Array parameters for Direct Indexing
+    // Fixed array indexing bounds
     static constexpr size_t MAX_PRICE_LEVELS = 10000;
     static constexpr double BASE_PRICE = 100.00;
     static constexpr size_t MAX_ORDERS = 100000;
 
-    // 1. The Core Price Level Array (Replaces std::map)
+    // Direct price-indexed array to avoid std::map red-black tree traversal
     alignas(64) std::vector<Order*> priceArray[MAX_PRICE_LEVELS];
 
+    // Lookup index for O(1) order cancellation by ID
     std::vector<Order*> orderRegistry;
 
-    // Bounds for fast sweeping
+    // Active price boundary tracking for fast sweeps
     int minActiveIndex = MAX_PRICE_LEVELS;
     int maxActiveIndex = -1;
 
-    // Converts a limit price to a fixed array index in O(1) time
+    // O(1) direct mapping from float price to contiguous array index (1 cent ticks)
     inline int PriceToIndex(double price) const {
         int index = static_cast<int>((price - BASE_PRICE) * 100.0);
         if (index < 0) return 0;
@@ -38,7 +39,6 @@ private:
         return index;
     }
 
-    // Validation using raw pointers
     bool ValidateOrder(const Order* order) const;
 
 public:
@@ -47,18 +47,18 @@ public:
 
     OrderBook();
 
-    // Core Exchange Operations (Now using ONLY raw pointers)
+    // Order operations (raw pointers managed via pre-allocated pool)
     void CancelOrder(int id);
     void InsertOrder(Order* newOrder);
     int GetVolumeAtLevel(double price);
 
-    // Our Single, Unified Matching Engine Function
+    // Core matching engine loop (in-place matching against resting liquidity)
     void MatchOrder(Order* newOrder);
 
-    // Market Order Sweep
+    // Aggressive sweeping across active price levels
     void ExecuteMarketOrder(bool isBuySide, int requestedQty);
 
-    // Utilities
+    // Helpers
     void PrintOrderBook() const;
     void PrintTradeHistory() const;
     void SetSilentMode(bool mode);

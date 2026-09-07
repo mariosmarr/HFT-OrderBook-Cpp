@@ -1,3 +1,4 @@
+// main.cpp
 #include <iostream>
 #include <vector>
 #include <chrono>
@@ -15,6 +16,7 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+// Packed network frame for UDP packets (binary format)
 #pragma pack(push, 1)
 struct NetworkOrder {
     uint8_t isBuy;
@@ -23,13 +25,13 @@ struct NetworkOrder {
 };
 #pragma pack(pop)
 
+// Percentile latency calculation (ns/us)
 void PrintLatencyStats(std::vector<uint64_t>& latencies) {
     if (latencies.empty()) return;
 
     std::sort(latencies.begin(), latencies.end());
 
     size_t count = latencies.size();
-    // Προσθήκη static_cast για να φύγουν τα Narrowing conversion warnings
     uint64_t p50 = latencies[static_cast<size_t>(count * 0.50)];
     uint64_t p90 = latencies[static_cast<size_t>(count * 0.90)];
     uint64_t p99 = latencies[static_cast<size_t>(count * 0.99)];
@@ -44,13 +46,13 @@ void PrintLatencyStats(std::vector<uint64_t>& latencies) {
 
 int main() {
     OrderBook book;
-    // Pre-allocate 100,000 orders to serve all our tests without a single 'new'
+    // Pre-allocate pool to eliminate dynamic allocation on hot path
     OrderPool globalPool(100000);
 
     std::cout << "    STARTING THE ULTIMATE MATCHING ENGINE TEST    " << std::endl;
 
     // -----------------------------------------------------------------
-    // TEST 1 & 2: Liquidity Provision
+    // TEST 1 & 2: Resting book initialization
     // -----------------------------------------------------------------
     std::cout << "\n[TEST 1 & 2] Populating Liquidity (Sell Side)..." << std::endl;
 
@@ -65,14 +67,14 @@ int main() {
     book.PrintOrderBook();
 
     // -----------------------------------------------------------------
-    // TEST 3: Safe Cancellation
+    // TEST 3: O(1) Cancellation via orderRegistry lookup
     // -----------------------------------------------------------------
     std::cout << "\n[TEST 3] Testing O(1) Cancellations..." << std::endl;
-    book.CancelOrder(sell2->GetId()); // Cancel the second order
+    book.CancelOrder(sell2->GetId());
     book.PrintOrderBook();
 
     // -----------------------------------------------------------------
-    // TEST 4 & 5: Liquidity Sweep
+    // TEST 4 & 5: Crossing book / multi-tick sweep
     // -----------------------------------------------------------------
     std::cout << "\n[TEST 4 & 5] Multi-Level Price Sweep..." << std::endl;
 
@@ -87,18 +89,18 @@ int main() {
     book.PrintOrderBook();
 
     // -----------------------------------------------------------------
-    // TEST 6: Aggressive Market Orders
+    // TEST 6: Aggressive market orders
     // -----------------------------------------------------------------
     std::cout << "\n[TEST 6] Testing Aggressive Market Orders..." << std::endl;
 
-    book.ExecuteMarketOrder(true, 15);  // Buy 15 shares
-    book.ExecuteMarketOrder(false, 10); // Sell 10 shares
+    book.ExecuteMarketOrder(true, 15);  // Market Buy
+    book.ExecuteMarketOrder(false, 10); // Market Sell
 
     book.PrintOrderBook();
     book.PrintTradeHistory();
 
     // -----------------------------------------------------------------
-    // TEST 7: Zero-Allocation Single-Thread Benchmark (10,000 Orders)
+    // TEST 7: Single-thread micro-benchmark (10k orders)
     // -----------------------------------------------------------------
     std::cout << "\n--- TEST 7: Zero-Allocation Single-Thread Benchmark (10,000 Orders) ---" << std::endl;
 
@@ -115,7 +117,6 @@ int main() {
         double price = 100.0 + (i % 8);
         int qty = 10 + (i % 50);
 
-        // Αντικατάσταση του ternary operator με καθαρό if/else
         Order* fastOrder = nullptr;
         if (i % 2 == 0) {
             fastOrder = globalPool.AllocateBuy(price, qty);
@@ -143,7 +144,7 @@ int main() {
     PrintLatencyStats(latencies);
 
     // -----------------------------------------------------------------
-    // TEST 8: Multi-Threaded UDP Lock-Free Benchmark (10,000 Orders)
+    // TEST 8: Dual-thread benchmark (UDP network ingestion -> lock-free SPSC -> engine)
     // -----------------------------------------------------------------
     std::cout << "\n--- TEST 8: End-to-End UDP SPSC Lock-Free Benchmark (10,000 Orders) ---" << std::endl;
 
@@ -154,13 +155,13 @@ int main() {
     std::vector<uint64_t> threadLatencies;
     threadLatencies.reserve(TOTAL_ORDERS);
 
-    // CORE PINNING: CONSUMER THREAD
+    // Pin matching consumer to Core 1
     HANDLE mainThread = GetCurrentThread();
     SetThreadAffinityMask(mainThread, (1ULL << 1));
 
     auto spscStart = std::chrono::high_resolution_clock::now();
 
-    // PRODUCER THREAD (UDP Network Server)
+    // Ingestion thread: runs on Core 0, reads raw UDP datagrams
     std::thread producer([&]() {
         SetThreadAffinityMask(GetCurrentThread(), (1ULL << 0));
 
@@ -181,8 +182,6 @@ int main() {
             int bytesReceived = recvfrom(udpSocket, (char*)&netOrder, sizeof(NetworkOrder), 0, nullptr, nullptr);
 
             if (bytesReceived == sizeof(NetworkOrder)) {
-
-                // Αντικατάσταση του ternary operator με καθαρό if/else
                 Order* fastOrder = nullptr;
                 if (netOrder.isBuy == 1) {
                     fastOrder = globalPool.AllocateBuy(netOrder.price, netOrder.qty);
@@ -199,7 +198,7 @@ int main() {
         WSACleanup();
     });
 
-    // CONSUMER THREAD (Matching Engine)
+    // Engine loop: drains SPSC ring buffer without locks
     int processedCount = 0;
     while (processedCount < TOTAL_ORDERS) {
         Order* incomingOrder = nullptr;

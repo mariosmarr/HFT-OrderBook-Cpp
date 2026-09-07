@@ -1,61 +1,66 @@
-Ultra-Low Latency C++ Matching Engine and Binary UDP Gateway
-A multi-threaded Limit Order Book (LOB) and Order Matching Engine written in C++20. This project serves as an advanced study in low-latency data structures, zero-allocation memory management, lock-free concurrency, and end-to-end UDP network ingestion.
+HFT OrderBook in C++ (Low Latency & UDP)
 
-Architecture
-To achieve sub-microsecond execution latency and maintain strict price-time priority (FIFO), the engine replaces traditional node-based data structures with contiguous, cache-friendly alternatives, combining the following core components:
+This is a personal project I built to study low-latency systems, lock-free concurrency, and hardware-conscious C++20. It's a multi-threaded Limit Order Book (LOB) and matching engine that processes UDP packets and matches orders.
 
-External Client and Network Ingestion
-A Python client dispatches 13-byte binary UDP datagrams. A Winsock2 UDP socket listens on Port 8080. Incoming packets are parsed directly from raw memory with zero serialization overhead using #pragma pack(1). The network thread fetches a pre-allocated order object and pushes it onto a lock-free queue.
+The main goal was to see how fast I could make it by completely removing dynamic memory allocations (no new/delete) and standard library trees (std::map) from the execution hot path.
 
-Zero-Allocation Order Book
-All standard library associative containers (std::map, std::unordered_map) have been completely removed to prevent dynamic heap allocations (new/delete) and hashing overhead during the execution hot-path.
+How it works (Architecture)
+The setup has two pinned threads communicating via a lock-free queue:
 
-Master Registry: A static array of raw pointers acts as the central order registry. Order IDs map directly to array indices, guaranteeing true O(1) lookups and cancellations without hash collisions.
+Ingestion Thread (Core 0): Listens on a Winsock2 UDP socket (port 8080). A Python client sends 13-byte packed binary datagrams. I use #pragma pack(1) so the C++ side casts the raw memory directly into a struct—zero serialization overhead. It grabs a pre-allocated order and pushes it to the queue.
 
-Flat Direct Indexing: Price levels are managed via a fixed-size, contiguous array (priceArray). This structure eliminates the need for Red-Black tree allocations and significantly improves spatial locality during deep market order sweeps.
+Matching Engine (Core 1): Pops orders from the queue and executes them against the book.
 
-Hardware Sympathy and Memory Management
-Custom Order Pool: A memory pool pre-allocates contiguous memory blocks for all order objects during engine initialization.
+Zero-Allocation & Cache Locality
+To get the latency under 1 microsecond, I had to redesign the data structures:
 
-Cache-Line Alignment: The price level array is strictly aligned to 64-byte L1 cache lines (alignas(64)). This ensures sequential memory reads are highly optimized by the CPU's hardware prefetcher.
+No std::map: Price levels are managed by a fixed-size contiguous array (priceArray). A price maps directly to an index (e.g. price * 100). This avoids red-black tree pointer chasing and keeps cache locality tight during deep market order sweeps.
 
-Lock-Free SPSC Queue: A Single-Producer Single-Consumer ring buffer utilizes atomic memory orders (acquire/release) to pass data between threads without OS-level mutex locks, avoiding thread sleeping and false sharing.
+Order Registry: Order IDs map directly to a static array of raw pointers. Lookups and cancellations are strictly O(1) without hash collisions.
 
-Thread Affinity: The producer thread (network ingestion) and consumer thread (matching engine) are explicitly pinned to isolated hardware CPU cores to maximize L1/L2 cache residency and eliminate OS context switching.
+OrderPool: I wrote a custom memory pool that pre-allocates contiguous memory for all orders at startup.
+
+False Sharing Prevention: The price array and the SPSC (Single-Producer Single-Consumer) queue indices are padded with alignas(64) to sit on different L1 cache lines.
+
+Lock-Free: The SPSC ring buffer uses std::memory_order_acquire / release. No OS mutexes or thread sleeping.
 
 Features
-Limit Orders (BID / ASK) with partial fills and resting volume logic.
 
-Market Orders capable of multi-level liquidity sweeps.
+Limit Orders (BID/ASK) with partial fills.
 
-Deterministic O(1) order cancellations.
+Market Orders that sweep liquidity across multiple price levels.
 
-Trade execution ledger with Volume-Weighted Average Price (VWAP) calculation.
+O(1) deterministic order cancellations.
 
-Real-time tail latency tracking (P50, P90, P99).
+Trade ledger tracking Volume-Weighted Average Price (VWAP).
 
-Performance and Tail Latency Profiling
-The system has been benchmarked using 10,000 deterministic orders. The measurements focus on the raw matching engine throughput and the end-to-end latency via local UDP loopback.
+Real-time tail latency profiling (P50, P90, P99).
 
-Zero-Allocation Single-Thread Benchmark
+Benchmarks
+Tested locally with 10,000 deterministic orders.
 
-Throughput: ~898,000 orders/sec
+Single-Thread Engine Benchmark (No Network)
+Raw matching engine throughput:
 
-P50 (Median Latency): 800 ns (0.8 us)
+Throughput: ~1,004,200 orders/sec
 
-P90 Latency: 1800 ns (1.8 us)
+P50 (Median): 800 ns (0.8 us)
 
-P99 Latency: 3000 ns (3.0 us)
+P90: 1500 ns (1.5 us)
 
-End-to-End UDP Ingestion and Core Pinning
+P99: 2200 ns (2.2 us)
 
-P50 (Median Latency): 900 ns (0.9 us)
+Dual-Thread UDP Pipeline (End-to-End)
 
-P90 Latency: 1500 ns (1.5 us)
+P50 (Median): 1000 ns (1.0 us)
 
-P99 Latency: 2700 ns (2.7 us)
+P90: 1600 ns (1.6 us)
 
-Max Latency: ~186 us (Attributed to OS network stack interrupts and socket buffering)
+P99: 2500 ns (2.5 us)
 
-Key Takeaway
-The transition from dynamic associative containers to strictly aligned flat arrays, combined with a custom memory pool and lock-free thread synchronization, successfully reduced median matching latency from over 600 microseconds down to sub-microsecond levels (800-900 nanoseconds).
+Max Latency: ~248 us
+
+Next Steps & Observations
+Dropping std::map and new/delete dropped my median matching latency from over 600us down to 800ns. However, looking at the dual-thread benchmark, the OS network stack (kernel socket buffering, syscall interrupts) adds significant tail latency (the 248us spike).
+
+My next goal is to research kernel-bypass networking and user-space I/O to completely bypass the OS network stack and see how much closer to the metal I can get.
